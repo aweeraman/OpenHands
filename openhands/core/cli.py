@@ -4,8 +4,10 @@ import sys
 from uuid import uuid4
 
 from prompt_toolkit import PromptSession, print_formatted_text
-from prompt_toolkit.formatted_text import FormattedText
+from prompt_toolkit.formatted_text import HTML, FormattedText
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.shortcuts import print_container
+from prompt_toolkit.widgets import Frame, TextArea
 
 import openhands.agenthub  # noqa F401 (we import this to get the agents registered)
 from openhands.core.config import (
@@ -39,32 +41,48 @@ from openhands.events.observation import (
     FileEditObservation,
 )
 from openhands.io import read_task
+from openhands.llm.metrics import Metrics
 
 prompt_session = PromptSession()
 
 
+class UsageMetrics:
+    def __init__(self):
+        self.total_cost: float = 0.00
+        self.total_input_tokens: int = 0
+        self.total_output_tokens: int = 0
+        self.total_cache_read: int = 0
+        self.total_cache_write: int = 0
+
+
 def display_message(message: str):
-    print_formatted_text(
-        FormattedText(
-            [
-                ('ansiyellow', '🤖 '),
-                ('ansiyellow', message),
-                ('', '\n'),
-            ]
+    message = message.strip()
+
+    if message:
+        print_formatted_text(
+            FormattedText(
+                [
+                    ('', '\n'),
+                    ('#FFD700', message),
+                    ('', '\n'),
+                ]
+            )
         )
-    )
 
 
 def display_command(command: str):
-    print_formatted_text(
-        FormattedText(
-            [
-                ('', '❯ '),
-                ('ansigreen', command),
-                ('', '\n'),
-            ]
-        )
+    container = Frame(
+        TextArea(
+            text=command,
+            read_only=True,
+            style='#808080',
+            wrap_lines=True,
+        ),
+        title='Command Run',
+        style='fg:#808080',
     )
+    print_container(container)
+    print_formatted_text('')  # Add a newline after the frame
 
 
 def display_confirmation(confirmation_state: ActionConfirmationStatus):
@@ -102,23 +120,45 @@ def display_confirmation(confirmation_state: ActionConfirmationStatus):
 
 def display_command_output(output: str):
     lines = output.split('\n')
+    formatted_lines = []
     for line in lines:
         if line.startswith('[Python Interpreter') or line.startswith('openhands@'):
             # TODO: clean this up once we clean up terminal output
             continue
-        print_formatted_text(FormattedText([('ansiblue', line)]))
-    print_formatted_text('')
+        formatted_lines.append(line)
+        formatted_lines.append('\n')
+
+    # Remove the last newline if it exists
+    if formatted_lines:
+        formatted_lines.pop()
+
+    container = Frame(
+        TextArea(
+            text=''.join(formatted_lines),
+            read_only=True,
+            style='#808080',
+            wrap_lines=True,
+        ),
+        title='Command Output',
+        style='fg:#808080',
+    )
+    print_container(container)
+    print_formatted_text('')  # Add a newline after the frame
 
 
 def display_file_edit(event: FileEditAction | FileEditObservation):
-    print_formatted_text(
-        FormattedText(
-            [
-                ('ansigreen', str(event)),
-                ('', '\n'),
-            ]
-        )
+    container = Frame(
+        TextArea(
+            text=f'{event}',
+            read_only=True,
+            style='#808080',
+            wrap_lines=True,
+        ),
+        title='File Edit',
+        style='fg:#808080',
     )
+    print_container(container)
+    print_formatted_text('')  # Add a newline after the frame
 
 
 def display_event(event: Event, config: AppConfig):
@@ -175,6 +215,99 @@ async def read_confirmation_input():
         return False
 
 
+def update_usage_metrics(event: Event, usage_metrics: UsageMetrics):
+    """Updates the UsageMetrics object with data from an event's llm_metrics."""
+    if hasattr(event, 'llm_metrics'):
+        llm_metrics: Metrics | None = getattr(event, 'llm_metrics', None)
+        if llm_metrics:
+            # Safely get accumulated_cost
+            cost = getattr(llm_metrics, 'accumulated_cost', 0)
+            # Ensure cost is a number before adding
+            usage_metrics.total_cost += cost if isinstance(cost, float) else 0
+
+            # Safely get token usage details object/dict
+            token_usage = getattr(llm_metrics, 'accumulated_token_usage', None)
+            if token_usage:
+                # Assume object access using getattr, providing defaults
+                prompt_tokens = getattr(token_usage, 'prompt_tokens', 0)
+                completion_tokens = getattr(token_usage, 'completion_tokens', 0)
+                cache_read = getattr(token_usage, 'cache_read_tokens', 0)
+                cache_write = getattr(token_usage, 'cache_write_tokens', 0)
+
+                # Ensure tokens are numbers before adding
+                usage_metrics.total_input_tokens += (
+                    prompt_tokens if isinstance(prompt_tokens, int) else 0
+                )
+                usage_metrics.total_output_tokens += (
+                    completion_tokens if isinstance(completion_tokens, int) else 0
+                )
+                usage_metrics.total_cache_read += (
+                    cache_read if isinstance(cache_read, int) else 0
+                )
+                usage_metrics.total_cache_write += (
+                    cache_write if isinstance(cache_write, int) else 0
+                )
+
+
+def shutdown(usage_metrics: UsageMetrics, session_id: str):
+    """Prints the final usage metrics in a formatted box."""
+    # Define the widths for different parts and the gaps
+    left_gap = 1
+    right_gap = 1
+    # Allocate width based on longest label + desired spacing to align values
+    label_part_width = 27
+    # Allocate remaining width for value, adjust as needed for long values
+    value_part_width = 15
+
+    # Calculate total inner width based on parts and gaps
+    inner_width = left_gap + label_part_width + value_part_width + right_gap
+
+    # Helper function to create a formatted line
+    def create_line(label: str, value: str) -> str:
+        # Pad label to its allocated width
+        label_part = label.ljust(label_part_width)
+        # Pad value to its allocated width
+        value_part = value.ljust(value_part_width)
+        # Construct the line with gaps and parts
+        return f"│{' ' * left_gap}{label_part}{value_part}{' ' * right_gap}│"
+
+    # Prepare formatted values
+    cost_str = f'${usage_metrics.total_cost:.6f}'
+    input_tokens_str = f'{usage_metrics.total_input_tokens:,}'
+    cache_read_str = f'{usage_metrics.total_cache_read:,}'
+    cache_write_str = f'{usage_metrics.total_cache_write:,}'
+    output_tokens_str = f'{usage_metrics.total_output_tokens:,}'
+    total_tokens_str = (
+        f'{usage_metrics.total_input_tokens + usage_metrics.total_output_tokens:,}'
+    )
+
+    # Print the box using HTML for color and create_line for alignment
+    print_formatted_text(HTML(f'<grey>┌{"─" * inner_width}┐</grey>'))
+    print_formatted_text(
+        HTML(f'<grey>{create_line("   Total Cost (USD):", cost_str)}</grey>')
+    )
+    print_formatted_text(
+        HTML(f'<grey>{create_line("   Total Input Tokens:", input_tokens_str)}</grey>')
+    )
+    print_formatted_text(
+        HTML(f'<grey>{create_line("      Cache Hits:", cache_read_str)}</grey>')
+    )
+    print_formatted_text(
+        HTML(f'<grey>{create_line("      Cache Writes:", cache_write_str)}</grey>')
+    )
+    print_formatted_text(
+        HTML(
+            f'<grey>{create_line("   Total Output Tokens:", output_tokens_str)}</grey>'
+        )
+    )
+    print_formatted_text(
+        HTML(f'<grey>{create_line("   Total Tokens:", total_tokens_str)}</grey>')
+    )
+    print_formatted_text(HTML(f'<grey>└{"─" * inner_width}┘</grey>'))
+
+    print_formatted_text(HTML(f'\n<grey>Closed session {session_id}</grey>\n'))
+
+
 async def main(loop: asyncio.AbstractEventLoop):
     """Runs the agent in CLI mode."""
 
@@ -192,7 +325,7 @@ async def main(loop: asyncio.AbstractEventLoop):
     initial_user_action = MessageAction(content=task_str) if task_str else None
 
     sid = str(uuid4())
-    display_message(f'Session ID: {sid}')
+    print_formatted_text(HTML(f'\n<grey>Initialized session {sid}</grey>\n'))
 
     agent = create_agent(config)
 
@@ -207,6 +340,8 @@ async def main(loop: asyncio.AbstractEventLoop):
 
     event_stream = runtime.event_stream
 
+    usage_metrics = UsageMetrics()
+
     async def prompt_for_next_task():
         next_message = await read_prompt_input(config.cli_multiline_input)
         if not next_message.strip():
@@ -215,12 +350,14 @@ async def main(loop: asyncio.AbstractEventLoop):
             event_stream.add_event(
                 ChangeAgentStateAction(AgentState.STOPPED), EventSource.ENVIRONMENT
             )
+            shutdown(usage_metrics, sid)
             return
         action = MessageAction(content=next_message)
         event_stream.add_event(action, EventSource.USER)
 
     async def on_event_async(event: Event):
         display_event(event, config)
+        update_usage_metrics(event, usage_metrics)
         if isinstance(event, AgentStateChangedObservation):
             if event.agent_state in [
                 AgentState.AWAITING_USER_INPUT,

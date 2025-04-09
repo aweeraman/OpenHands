@@ -1,13 +1,21 @@
 import asyncio
 import logging
+import os
 import sys
+import time
+from pathlib import Path
+from typing import List, Optional
 from uuid import uuid4
 
 from prompt_toolkit import PromptSession, print_formatted_text
+from prompt_toolkit.application import Application
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import HTML, FormattedText
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.shortcuts import print_container
+from prompt_toolkit.layout.containers import HSplit, Window
+from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.layout import Layout
+from prompt_toolkit.shortcuts import clear, print_container
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import Frame, TextArea
 
@@ -227,6 +235,52 @@ def display_event(event: Event, config: AppConfig):
         display_confirmation(event.confirmation_state)
 
 
+def display_banner(session_id: str, is_loaded: asyncio.Event):
+    print_formatted_text(
+        HTML(r"""<gold>
+     ___                    _   _                 _
+    /  _ \ _ __   ___ _ __ | | | | __ _ _ __   __| |___
+    | | | | '_ \ / _ \ '_ \| |_| |/ _` | '_ \ / _` / __|
+    | |_| | |_) |  __/ | | |  _  | (_| | | | | (_| \__ \
+    \___ /| .__/ \___|_| |_|_| |_|\__,_|_| |_|\__,_|___/
+          |_|
+    </gold>"""),
+        style=DEFAULT_STYLE,
+    )
+
+    banner_text = (
+        'Initialized session' if is_loaded.is_set() else 'Initializing session'
+    )
+    print_formatted_text(HTML(f'<grey>{banner_text} {session_id}</grey>\n'))
+
+
+def display_welcome_message():
+    print_formatted_text(
+        HTML("<gold>Let's start building!</gold>\n"), style=DEFAULT_STYLE
+    )
+    print_formatted_text(
+        HTML('What do you want to build? <grey>Type /help for help</grey>\n'),
+        style=DEFAULT_STYLE,
+    )
+
+
+def display_initialization_animation(text, is_loaded: asyncio.Event):
+    ANIMATION_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
+    i = 0
+    while not is_loaded.is_set():
+        sys.stdout.write('\n')
+        sys.stdout.write(
+            f'\033[s\033[J\033[38;2;255;215;0m[{ANIMATION_FRAMES[i % len(ANIMATION_FRAMES)]}] {text}\033[0m\033[u\033[1A'
+        )
+        sys.stdout.flush()
+        time.sleep(0.1)
+        i += 1
+
+    sys.stdout.write('\r' + ' ' * (len(text) + 10) + '\r')
+    sys.stdout.flush()
+
+
 async def read_prompt_input(multiline=False):
     try:
         if multiline:
@@ -260,6 +314,60 @@ async def read_confirmation_input():
         return confirmation.lower() == 'y'
     except (KeyboardInterrupt, EOFError):
         return False
+
+
+def cli_confirm(question: str = 'Are you sure?', choices: Optional[List[str]] = None):
+    if choices is None:
+        choices = ['Yes', 'No']
+    selected = [0]  # Using list to allow modification in closure
+
+    def get_choice_text():
+        return [
+            ('class:question', f'{question}\n\n'),
+        ] + [
+            (
+                'class:selected' if i == selected[0] else 'class:unselected',
+                f"{'> ' if i == selected[0] else '  '}{choice}\n",
+            )
+            for i, choice in enumerate(choices)
+        ]
+
+    kb = KeyBindings()
+
+    @kb.add('up')
+    def _(event):
+        selected[0] = (selected[0] - 1) % len(choices)
+
+    @kb.add('down')
+    def _(event):
+        selected[0] = (selected[0] + 1) % len(choices)
+
+    @kb.add('enter')
+    def _(event):
+        event.app.exit(result=selected[0] == 0)
+
+    style = Style.from_dict({'selected': COLOR_GOLD, 'unselected': ''})
+
+    layout = Layout(
+        HSplit(
+            [
+                Window(
+                    FormattedTextControl(get_choice_text),
+                    always_hide_cursor=True,
+                )
+            ]
+        )
+    )
+
+    app = Application(
+        layout=layout,
+        key_bindings=kb,
+        style=style,
+        mouse_support=True,
+        full_screen=False,
+    )
+
+    return app.run(in_thread=True)
 
 
 def update_usage_metrics(event: Event, usage_metrics: UsageMetrics):
@@ -378,6 +486,56 @@ def display_help(style=DEFAULT_STYLE):
     print('')
 
 
+def manage_openhands_file(folder_path=None):
+    openhands_file = Path.home() / '.openhands'
+
+    if not openhands_file.exists():
+        openhands_file.touch()
+
+    if folder_path:
+        trusted_paths = []
+        if openhands_file.stat().st_size > 0:
+            with open(openhands_file, 'r') as f:
+                trusted_paths = [line.strip() for line in f.readlines()]
+
+        if folder_path in trusted_paths:
+            return True
+
+        with open(openhands_file, 'a') as f:
+            f.write(f'{folder_path}\n')
+
+        return False
+
+    return False
+
+
+def check_folder_security_agreement(current_dir):
+    is_trusted = manage_openhands_file(current_dir)
+
+    if not is_trusted:
+        security_frame = Frame(
+            TextArea(
+                text=(
+                    f'Do you trust the files in this folder?\n\n'
+                    f'{current_dir}\n\n'
+                    'OpenHands may read and execute files in this folder with your permission.'
+                ),
+                style='#ffffff',
+                read_only=True,
+                wrap_lines=True,
+            )
+        )
+
+        clear()
+        print_container(security_frame)
+
+        confirm = cli_confirm('Do you wish to continue?', ['Yes, proceed', 'No, exit'])
+
+        return confirm
+
+    return True
+
+
 async def main(loop: asyncio.AbstractEventLoop):
     """Runs the agent in CLI mode."""
 
@@ -395,7 +553,15 @@ async def main(loop: asyncio.AbstractEventLoop):
     initial_user_action = MessageAction(content=task_str) if task_str else None
 
     sid = str(uuid4())
-    print_formatted_text(HTML(f'\n<grey>Initialized session {sid}</grey>\n'))
+    is_loaded = asyncio.Event()
+
+    # Show OpenHands banner and session ID
+    display_banner(session_id=sid, is_loaded=is_loaded)
+
+    # Show Initialization loader
+    loop.run_in_executor(
+        None, display_initialization_animation, 'Initializing...', is_loaded
+    )
 
     agent = create_agent(config)
 
@@ -477,6 +643,26 @@ async def main(loop: asyncio.AbstractEventLoop):
         repo_directory=repo_directory,
     )
 
+    # Clear loading animation
+    is_loaded.set()
+
+    # TODO: Set working directory from config or use current working directory?
+    current_dir = os.getcwd()
+
+    if not check_folder_security_agreement(current_dir):
+        # User rejected, exit application
+        graceful_exit()
+        return
+
+    # Clear the terminal
+    clear()
+
+    # Show OpenHands banner and session ID
+    display_banner(session_id=sid, is_loaded=is_loaded)
+
+    # Show OpenHands welcome
+    display_welcome_message()
+
     if initial_user_action:
         # If there's an initial user action, enqueue it and do not prompt again
         event_stream.add_event(initial_user_action, EventSource.USER)
@@ -487,6 +673,31 @@ async def main(loop: asyncio.AbstractEventLoop):
     await run_agent_until_done(
         controller, runtime, memory, [AgentState.STOPPED, AgentState.ERROR]
     )
+
+
+def graceful_exit():
+    try:
+        # Cancel all running tasks
+        pending = asyncio.all_tasks(loop)
+        for task in pending:
+            if not task.done():
+                task.cancel()
+
+        if not loop.is_closed():
+            # Allow canceled tasks to complete with a brief timeout
+            for task in pending:
+                try:
+                    # Give tasks a short time to clean up
+                    loop.call_soon_threadsafe(task.cancel)
+                except Exception:
+                    pass
+
+            # Close the loop if it's not already closed
+            if not loop.is_closed():
+                loop.close()
+    except Exception as e:
+        print(f'Error during cleanup: {e}')
+        sys.exit(1)
 
 
 if __name__ == '__main__':
@@ -503,14 +714,4 @@ if __name__ == '__main__':
         print(f'An error occurred: {e}')
         sys.exit(1)
     finally:
-        try:
-            # Cancel all running tasks
-            pending = asyncio.all_tasks(loop)
-            for task in pending:
-                task.cancel()
-            # Wait for all tasks to complete with a timeout
-            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-            loop.close()
-        except Exception as e:
-            print(f'Error during cleanup: {e}')
-            sys.exit(1)
+        graceful_exit()

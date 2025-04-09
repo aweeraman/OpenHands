@@ -4,9 +4,11 @@ import sys
 from uuid import uuid4
 
 from prompt_toolkit import PromptSession, print_formatted_text
+from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import HTML, FormattedText
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.shortcuts import print_container
+from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import Frame, TextArea
 
 import openhands.agenthub  # noqa F401 (we import this to get the agents registered)
@@ -43,7 +45,49 @@ from openhands.events.observation import (
 from openhands.io import read_task
 from openhands.llm.metrics import Metrics
 
-prompt_session = PromptSession()
+# Color and styling constants
+COLOR_GOLD = '#FFD700'
+COLOR_GREY = '#808080'
+DEFAULT_STYLE = Style.from_dict(
+    {
+        'gold': COLOR_GOLD,
+        'grey': COLOR_GREY,
+        'prompt': f'{COLOR_GOLD} bold',
+    }
+)
+
+COMMANDS = {
+    '/exit': 'Exit the application',
+    '/help': 'Display available commands',
+    '/init': 'Initialize a new repository',
+}
+
+
+class CommandCompleter(Completer):
+    """Custom completer for commands."""
+
+    def get_completions(self, document, complete_event):
+        text = document.text
+
+        # Only show completions if the user has typed '/'
+        if text.startswith('/'):
+            # If just '/' is typed, show all commands
+            if text == '/':
+                for command, description in COMMANDS.items():
+                    yield Completion(
+                        command[1:],  # Remove the leading '/' as it's already typed
+                        start_position=0,
+                        display=f'{command} - {description}',
+                    )
+            # Otherwise show matching commands
+            else:
+                for command, description in COMMANDS.items():
+                    if command.startswith(text):
+                        yield Completion(
+                            command[len(text) :],  # Complete the remaining part
+                            start_position=0,
+                            display=f'{command} - {description}',
+                        )
 
 
 class UsageMetrics:
@@ -55,6 +99,9 @@ class UsageMetrics:
         self.total_cache_write: int = 0
 
 
+prompt_session = PromptSession(style=DEFAULT_STYLE, completer=CommandCompleter())
+
+
 def display_message(message: str):
     message = message.strip()
 
@@ -63,7 +110,7 @@ def display_message(message: str):
             FormattedText(
                 [
                     ('', '\n'),
-                    ('#FFD700', message),
+                    (COLOR_GOLD, message),
                     ('', '\n'),
                 ]
             )
@@ -75,11 +122,11 @@ def display_command(command: str):
         TextArea(
             text=command,
             read_only=True,
-            style='#808080',
+            style=COLOR_GREY,
             wrap_lines=True,
         ),
         title='Command Run',
-        style='fg:#808080',
+        style=f'fg:{COLOR_GREY}',
     )
     print_container(container)
     print_formatted_text('')  # Add a newline after the frame
@@ -136,11 +183,11 @@ def display_command_output(output: str):
         TextArea(
             text=''.join(formatted_lines),
             read_only=True,
-            style='#808080',
+            style=COLOR_GREY,
             wrap_lines=True,
         ),
         title='Command Output',
-        style='fg:#808080',
+        style=f'fg:{COLOR_GREY}',
     )
     print_container(container)
     print_formatted_text('')  # Add a newline after the frame
@@ -151,11 +198,11 @@ def display_file_edit(event: FileEditAction | FileEditObservation):
         TextArea(
             text=f'{event}',
             read_only=True,
-            style='#808080',
+            style=COLOR_GREY,
             wrap_lines=True,
         ),
         title='File Edit',
-        style='fg:#808080',
+        style=f'fg:{COLOR_GREY}',
     )
     print_container(container)
     print_formatted_text('')  # Add a newline after the frame
@@ -196,19 +243,19 @@ async def read_prompt_input(multiline=False):
             )
         else:
             message = await prompt_session.prompt_async(
-                '>> ',
+                '> ',
             )
         return message
     except KeyboardInterrupt:
-        return 'exit'
+        return '/exit'
     except EOFError:
-        return 'exit'
+        return '/exit'
 
 
 async def read_confirmation_input():
     try:
         confirmation = await prompt_session.prompt_async(
-            'Confirm action (possible security risk)? (y/n) >> ',
+            'Confirm action (possible security risk)? (y/n) > ',
         )
         return confirmation.lower() == 'y'
     except (KeyboardInterrupt, EOFError):
@@ -308,6 +355,29 @@ def shutdown(usage_metrics: UsageMetrics, session_id: str):
     print_formatted_text(HTML(f'\n<grey>Closed session {session_id}</grey>\n'))
 
 
+def display_help(style=DEFAULT_STYLE):
+    """Display available slash commands with descriptions."""
+
+    print_formatted_text(HTML('\n<grey>OpenHands CLI</grey>'), style=style)
+    print_formatted_text(
+        HTML('<grey>v0.1.0</grey>'), style=style
+    )  # TODO: link the actual version
+
+    print('\nSample tasks:')
+    print('- Create a simple todo list application')
+    print('- Create a simple web server')
+    print('- Create a REST API')
+    print('- Create a chat application')
+
+    print_formatted_text(HTML('\nInteractive commands:'), style=style)
+    for command, description in COMMANDS.items():
+        print_formatted_text(
+            HTML(f'<gold><b>{command}</b></gold> - <grey>{description}</grey>'),
+            style=style,
+        )
+    print('')
+
+
 async def main(loop: asyncio.AbstractEventLoop):
     """Runs the agent in CLI mode."""
 
@@ -346,12 +416,18 @@ async def main(loop: asyncio.AbstractEventLoop):
         next_message = await read_prompt_input(config.cli_multiline_input)
         if not next_message.strip():
             await prompt_for_next_task()
-        if next_message == 'exit':
+        if next_message == '/exit':
             event_stream.add_event(
                 ChangeAgentStateAction(AgentState.STOPPED), EventSource.ENVIRONMENT
             )
             shutdown(usage_metrics, sid)
             return
+        if next_message == '/help':
+            display_help()
+            await prompt_for_next_task()
+        if next_message == '/init':
+            # TODO: Implement init command
+            await prompt_for_next_task()
         action = MessageAction(content=next_message)
         event_stream.add_event(action, EventSource.USER)
 

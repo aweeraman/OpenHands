@@ -6,6 +6,9 @@ from uuid import uuid4
 from prompt_toolkit import PromptSession, print_formatted_text
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.shortcuts import print_container
+from prompt_toolkit.styles import Style
+from prompt_toolkit.widgets import Frame, TextArea
 
 import openhands.agenthub  # noqa F401 (we import this to get the agents registered)
 from openhands.core.config import (
@@ -40,85 +43,110 @@ from openhands.events.observation import (
 )
 from openhands.io import read_task
 
+# Color and styling constants
+COLOR_GOLD = '#FFD700'
+COLOR_GREY = '#808080'
+DEFAULT_STYLE = Style.from_dict(
+    {
+        'gold': COLOR_GOLD,
+        'grey': COLOR_GREY,
+        'prompt': f'{COLOR_GOLD} bold',
+    }
+)
+
 prompt_session = PromptSession()
 
 
-def display_message(message: str) -> None:
+def display_message(message: str):
+    message = message.strip()
+
+    if message:
+        print_formatted_text(
+            FormattedText(
+                [
+                    ('', '\n'),
+                    (COLOR_GOLD, message),
+                    ('', '\n'),
+                ]
+            )
+        )
+
+
+def display_command(command: str):
+    container = Frame(
+        TextArea(
+            text=command,
+            read_only=True,
+            style=COLOR_GREY,
+            wrap_lines=True,
+        ),
+        title='Command Run',
+        style=f'fg:{COLOR_GREY}',
+    )
+    print_container(container)
+    print_formatted_text('')
+
+
+def display_confirmation(confirmation_state: ActionConfirmationStatus):
+    status_map = {
+        ActionConfirmationStatus.CONFIRMED: ('ansigreen', '✅'),
+        ActionConfirmationStatus.REJECTED: ('ansired', '❌'),
+        ActionConfirmationStatus.AWAITING_CONFIRMATION: ('ansiyellow', '⏳'),
+    }
+    color, icon = status_map.get(confirmation_state, ('ansiyellow', ''))
+
     print_formatted_text(
         FormattedText(
             [
-                ('ansiyellow', '🤖 '),
-                ('ansiyellow', message),
+                (color, f'{icon} '),
+                (color, str(confirmation_state)),
                 ('', '\n'),
             ]
         )
     )
 
 
-def display_command(command: str) -> None:
-    print_formatted_text(
-        FormattedText(
-            [
-                ('', '❯ '),
-                ('ansigreen', command),
-                ('', '\n'),
-            ]
-        )
-    )
-
-
-def display_confirmation(confirmation_state: ActionConfirmationStatus) -> None:
-    if confirmation_state == ActionConfirmationStatus.CONFIRMED:
-        print_formatted_text(
-            FormattedText(
-                [
-                    ('ansigreen', '✅ '),
-                    ('ansigreen', str(confirmation_state)),
-                    ('', '\n'),
-                ]
-            )
-        )
-    elif confirmation_state == ActionConfirmationStatus.REJECTED:
-        print_formatted_text(
-            FormattedText(
-                [
-                    ('ansired', '❌ '),
-                    ('ansired', str(confirmation_state)),
-                    ('', '\n'),
-                ]
-            )
-        )
-    else:
-        print_formatted_text(
-            FormattedText(
-                [
-                    ('ansiyellow', '⏳ '),
-                    ('ansiyellow', str(confirmation_state)),
-                    ('', '\n'),
-                ]
-            )
-        )
-
-
-def display_command_output(output: str) -> None:
+def display_command_output(output: str):
     lines = output.split('\n')
+    formatted_lines = []
     for line in lines:
         if line.startswith('[Python Interpreter') or line.startswith('openhands@'):
             # TODO: clean this up once we clean up terminal output
             continue
-        print_formatted_text(FormattedText([('ansiblue', line)]))
+        formatted_lines.append(line)
+        formatted_lines.append('\n')
+
+    # Remove the last newline if it exists
+    if formatted_lines:
+        formatted_lines.pop()
+
+    container = Frame(
+        TextArea(
+            text=''.join(formatted_lines),
+            read_only=True,
+            style=COLOR_GREY,
+            wrap_lines=True,
+        ),
+        title='Command Output',
+        style=f'fg:{COLOR_GREY}',
+    )
+    print_container(container)
     print_formatted_text('')
 
 
-def display_file_edit(event: FileEditAction | FileEditObservation) -> None:
-    print_formatted_text(
-        FormattedText(
-            [
-                ('ansigreen', str(event)),
-                ('', '\n'),
-            ]
-        )
+def display_file_edit(event: FileEditAction | FileEditObservation):
+    container = Frame(
+        TextArea(
+            text=f'{event}',
+            read_only=True,
+            style=COLOR_GREY,
+            wrap_lines=True,
+        ),
+        title='File Edit',
+        style=f'fg:{COLOR_GREY}',
     )
+    print_container(container)
+    print_formatted_text('')
 
 
 def display_event(event: Event, config: AppConfig) -> None:
@@ -156,7 +184,7 @@ async def read_prompt_input(multiline=False):
             )
         else:
             message = await prompt_session.prompt_async(
-                '>> ',
+                '> ',
             )
         return message
     except KeyboardInterrupt:
@@ -168,7 +196,7 @@ async def read_prompt_input(multiline=False):
 async def read_confirmation_input():
     try:
         confirmation = await prompt_session.prompt_async(
-            'Confirm action (possible security risk)? (y/n) >> ',
+            'Confirm action (possible security risk)? (y/n) > ',
         )
         return confirmation.lower() == 'y'
     except (KeyboardInterrupt, EOFError):

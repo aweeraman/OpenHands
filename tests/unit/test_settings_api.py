@@ -7,7 +7,7 @@ from pydantic import SecretStr
 from openhands.core.config.sandbox_config import SandboxConfig
 from openhands.integrations.provider import ProviderType, SecretStore
 from openhands.server.app import app
-from openhands.server.settings import Settings
+from openhands.storage.data_models.settings import Settings
 
 
 @pytest.fixture

@@ -6,8 +6,6 @@ from pathlib import Path
 from typing import List, Optional
 from uuid import uuid4
 
-import httpx
-import litellm
 import toml
 from prompt_toolkit import PromptSession, print_formatted_text
 from prompt_toolkit.application import Application
@@ -16,7 +14,7 @@ from prompt_toolkit.completion import (
     Completion,
     FuzzyWordCompleter,
 )
-from prompt_toolkit.formatted_text import HTML, FormattedText
+from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout.containers import HSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
@@ -31,13 +29,14 @@ import openhands.agenthub  # noqa F401 (we import this to get the agents registe
 from openhands import __version__
 from openhands.controller import AgentController
 from openhands.controller.agent import Agent
+from openhands.core.cli.display import display_event
+from openhands.core.cli.models import get_llm_providers_and_models
 from openhands.core.config import (
     AppConfig,
     parse_arguments,
     setup_config_from_args,
 )
 from openhands.core.config.condenser_config import NoOpCondenserConfig
-from openhands.core.config.llm_config import LLMConfig
 from openhands.core.config.utils import OH_DEFAULT_AGENT
 from openhands.core.logger import openhands_logger as logger
 from openhands.core.loop import run_agent_until_done
@@ -52,21 +51,14 @@ from openhands.core.setup import (
 from openhands.events import EventSource, EventStreamSubscriber
 from openhands.events.action import (
     Action,
-    ActionConfirmationStatus,
     ChangeAgentStateAction,
-    CmdRunAction,
-    FileEditAction,
     MessageAction,
 )
 from openhands.events.event import Event
 from openhands.events.observation import (
     AgentStateChangedObservation,
-    CmdOutputObservation,
-    FileEditObservation,
-    FileReadObservation,
 )
 from openhands.io import read_task
-from openhands.llm import bedrock
 from openhands.llm.metrics import Metrics
 from openhands.mcp import fetch_mcp_tools_from_config
 from openhands.memory.condenser.impl.llm_summarizing_condenser import (
@@ -145,126 +137,6 @@ class UsageMetrics:
 
 
 prompt_session = PromptSession(style=DEFAULT_STYLE, completer=CommandCompleter())
-
-
-def display_message(message: str):
-    message = message.strip()
-
-    if message:
-        print_formatted_text(f'\n{message}\n')
-
-
-def display_command(command: str):
-    container = Frame(
-        TextArea(
-            text=command,
-            read_only=True,
-            style=COLOR_GREY,
-            wrap_lines=True,
-        ),
-        title='Command Run',
-        style=f'fg:{COLOR_GREY}',
-    )
-    print_container(container)
-    print_formatted_text('')
-
-
-def display_confirmation(confirmation_state: ActionConfirmationStatus):
-    status_map = {
-        ActionConfirmationStatus.CONFIRMED: ('ansigreen', '✅'),
-        ActionConfirmationStatus.REJECTED: ('ansired', '❌'),
-        ActionConfirmationStatus.AWAITING_CONFIRMATION: ('ansiyellow', '⏳'),
-    }
-    color, icon = status_map.get(confirmation_state, ('ansiyellow', ''))
-
-    print_formatted_text(
-        FormattedText(
-            [
-                (color, f'{icon} '),
-                (color, str(confirmation_state)),
-                ('', '\n'),
-            ]
-        )
-    )
-
-
-def display_command_output(output: str):
-    lines = output.split('\n')
-    formatted_lines = []
-    for line in lines:
-        if line.startswith('[Python Interpreter') or line.startswith('openhands@'):
-            # TODO: clean this up once we clean up terminal output
-            continue
-        formatted_lines.append(line)
-        formatted_lines.append('\n')
-
-    # Remove the last newline if it exists
-    if formatted_lines:
-        formatted_lines.pop()
-
-    container = Frame(
-        TextArea(
-            text=''.join(formatted_lines),
-            read_only=True,
-            style=COLOR_GREY,
-            wrap_lines=True,
-        ),
-        title='Command Output',
-        style=f'fg:{COLOR_GREY}',
-    )
-    print_container(container)
-    print_formatted_text('')
-
-
-def display_file_edit(event: FileEditAction | FileEditObservation):
-    container = Frame(
-        TextArea(
-            text=f'{event}',
-            read_only=True,
-            style=COLOR_GREY,
-            wrap_lines=True,
-        ),
-        title='File Edit',
-        style=f'fg:{COLOR_GREY}',
-    )
-    print_container(container)
-    print_formatted_text('')
-
-
-def display_file_read(event: FileReadObservation):
-    container = Frame(
-        TextArea(
-            text=f'{event}',
-            read_only=True,
-            style=COLOR_GREY,
-            wrap_lines=True,
-        ),
-        title='File Read',
-        style=f'fg:{COLOR_GREY}',
-    )
-    print_container(container)
-    print_formatted_text('')
-
-
-def display_event(event: Event, config: AppConfig) -> None:
-    if isinstance(event, Action):
-        if hasattr(event, 'thought'):
-            display_message(event.thought)
-    if isinstance(event, MessageAction):
-        if event.source == EventSource.AGENT:
-            display_message(event.content)
-    if isinstance(event, CmdRunAction):
-        display_command(event.command)
-    if isinstance(event, CmdOutputObservation):
-        display_command_output(event.content)
-    if isinstance(event, FileEditAction):
-        display_file_edit(event)
-    if isinstance(event, FileEditObservation):
-        display_file_edit(event)
-    if isinstance(event, FileReadObservation):
-        display_file_read(event)
-    if hasattr(event, 'confirmation_state') and config.security.confirmation_mode:
-        display_confirmation(event.confirmation_state)
 
 
 def display_help():
@@ -781,136 +653,12 @@ async def cleanup_session(
         logger.error(f'Error during session cleanup: {e}')
 
 
-def get_litellm_models(config: AppConfig):
-    litellm_model_list = litellm.model_list + list(litellm.model_cost.keys())
-    litellm_model_list_without_bedrock = bedrock.remove_error_modelId(
-        litellm_model_list
-    )
-    # TODO: for bedrock, this is using the default config
-    llm_config: LLMConfig = config.get_llm_config()
-    bedrock_model_list = []
-    if (
-        llm_config.aws_region_name
-        and llm_config.aws_access_key_id
-        and llm_config.aws_secret_access_key
-    ):
-        bedrock_model_list = bedrock.list_foundation_models(
-            llm_config.aws_region_name,
-            llm_config.aws_access_key_id.get_secret_value(),
-            llm_config.aws_secret_access_key.get_secret_value(),
-        )
-    model_list = litellm_model_list_without_bedrock + bedrock_model_list
-    for llm_config in config.llms.values():
-        ollama_base_url = llm_config.ollama_base_url
-        if llm_config.model.startswith('ollama'):
-            if not ollama_base_url:
-                ollama_base_url = llm_config.base_url
-        if ollama_base_url:
-            ollama_url = ollama_base_url.strip('/') + '/api/tags'
-            try:
-                ollama_models_list = httpx.get(ollama_url, timeout=3).json()['models']
-                for model in ollama_models_list:
-                    model_list.append('ollama/' + model['name'])
-                break
-            except httpx.HTTPError as e:
-                logger.error(f'Error getting OLLAMA models: {e}')
-
-    return list(sorted(set(model_list)))
-
-
-VERIFIED_PROVIDERS = ['openai', 'azure', 'anthropic', 'deepseek']
-
-VERIFIED_OPENAI_MODELS = [
-    'gpt-4o',
-    'gpt-4o-mini',
-    'gpt-4-turbo',
-    'gpt-4',
-    'gpt-4-32k',
-    'o1-mini',
-    'o1',
-    'o3-mini',
-    'o3-mini-2025-01-31',
-]
-
-VERIFIED_ANTHROPIC_MODELS = [
-    'claude-2',
-    'claude-2.1',
-    'claude-3-5-sonnet-20240620',
-    'claude-3-5-sonnet-20241022',
-    'claude-3-5-haiku-20241022',
-    'claude-3-haiku-20240307',
-    'claude-3-opus-20240229',
-    'claude-3-sonnet-20240229',
-    'claude-3-7-sonnet-20250219',
-]
-
-
-def is_number(char):
-    return char.isdigit()
-
-
-def split_is_actually_version(split):
-    return len(split) > 1 and split[1] and split[1][0] and is_number(split[1][0])
-
-
-def extract_model_and_provider(model):
-    separator = '/'
-    split = model.split(separator)
-
-    if len(split) == 1:
-        # no "/" separator found, try with "."
-        separator = '.'
-        split = model.split(separator)
-        if split_is_actually_version(split):
-            split = [separator.join(split)]  # undo the split
-
-    if len(split) == 1:
-        # no "/" or "." separator found
-        if split[0] in VERIFIED_OPENAI_MODELS:
-            return {'provider': 'openai', 'model': split[0], 'separator': '/'}
-        if split[0] in VERIFIED_ANTHROPIC_MODELS:
-            return {'provider': 'anthropic', 'model': split[0], 'separator': '/'}
-        # return as model only
-        return {'provider': '', 'model': model, 'separator': ''}
-
-    provider = split[0]
-    model_id = separator.join(split[1:])
-    return {'provider': provider, 'model': model_id, 'separator': separator}
-
-
-def organize_models_and_providers(models):
-    result = {}
-
-    for model in models:
-        extracted = extract_model_and_provider(model)
-        separator = extracted['separator']
-        provider = extracted['provider']
-        model_id = extracted['model']
-
-        # Ignore "anthropic" providers with a separator of "."
-        # These are outdated and incompatible providers.
-        if provider == 'anthropic' and separator == '.':
-            continue
-
-        key = provider or 'other'
-        if key not in result:
-            result[key] = {'separator': separator, 'models': []}
-
-        result[key]['models'].append(model_id)
-
-    return result
-
-
 async def modify_llm_settings_basic(
     config: AppConfig, settings_store: FileSettingsStore
 ):
-    litellm_model_list = get_litellm_models(config)
-    organized_models = organize_models_and_providers(litellm_model_list)
+    providers_and_models = get_llm_providers_and_models(config)
 
-    provider_list = list(organized_models.keys())
-    verified_providers = [p for p in VERIFIED_PROVIDERS if p in provider_list]
-    provider_list = [p for p in provider_list if p not in verified_providers]
-    provider_list = verified_providers + provider_list
+    provider_list = list(providers_and_models.keys())
 
     provider_completer = FuzzyWordCompleter(provider_list)
     session = PromptSession()
@@ -919,14 +667,7 @@ async def modify_llm_settings_basic(
         completer=provider_completer,
     )
 
-    model_list = organized_models[provider]['models']
-    if provider == 'openai':
-        model_list = [m for m in model_list if m not in VERIFIED_OPENAI_MODELS]
-        model_list = VERIFIED_OPENAI_MODELS + model_list
-    if provider == 'anthropic':
-        model_list = [m for m in model_list if m not in VERIFIED_ANTHROPIC_MODELS]
-        model_list = VERIFIED_ANTHROPIC_MODELS + model_list
-
+    model_list = providers_and_models[provider]['models']
     model_completer = FuzzyWordCompleter(model_list)
     model = await session.prompt_async(
         '(Step 2/3) Select LLM Model: ',
@@ -939,7 +680,7 @@ async def modify_llm_settings_basic(
     )
 
     llm_config = config.get_llm_config()
-    llm_config.model = provider + organized_models[provider]['separator'] + model
+    llm_config.model = provider + providers_and_models[provider]['separator'] + model
     llm_config.api_key = api_key
     llm_config.base_url = None
     config.set_llm_config(llm_config)
@@ -959,7 +700,7 @@ async def modify_llm_settings_basic(
     if not settings:
         settings = Settings()
 
-    settings.llm_model = provider + organized_models[provider]['separator'] + model
+    settings.llm_model = provider + providers_and_models[provider]['separator'] + model
     settings.llm_api_key = api_key
     settings.llm_base_url = None
     settings.agent = OH_DEFAULT_AGENT

@@ -29,7 +29,12 @@ import openhands.agenthub  # noqa F401 (we import this to get the agents registe
 from openhands import __version__
 from openhands.controller import AgentController
 from openhands.controller.agent import Agent
-from openhands.core.cli.display import display_event
+from openhands.core.cli.display import (
+    display_banner,
+    display_event,
+    display_initialization_animation,
+    display_welcome_message,
+)
 from openhands.core.cli.models import get_llm_providers_and_models
 from openhands.core.config import (
     AppConfig,
@@ -181,54 +186,6 @@ def display_help():
             '<grey>Learn more at: https://docs.all-hands.dev/modules/usage/getting-started</grey>\n'
         )
     )
-
-
-def display_banner(session_id: str, is_loaded: asyncio.Event):
-    print_formatted_text(
-        HTML(r"""<gold>
-     ___                    _   _                 _
-    /  _ \ _ __   ___ _ __ | | | | __ _ _ __   __| |___
-    | | | | '_ \ / _ \ '_ \| |_| |/ _` | '_ \ / _` / __|
-    | |_| | |_) |  __/ | | |  _  | (_| | | | | (_| \__ \
-    \___ /| .__/ \___|_| |_|_| |_|\__,_|_| |_|\__,_|___/
-          |_|
-    </gold>"""),
-        style=DEFAULT_STYLE,
-    )
-
-    print_formatted_text(HTML(f'<grey>OpenHands CLI v{__version__}</grey>'))
-
-    banner_text = (
-        'Initialized session' if is_loaded.is_set() else 'Initializing session'
-    )
-    print_formatted_text(HTML(f'\n<grey>{banner_text} {session_id}</grey>\n'))
-
-
-def display_welcome_message():
-    print_formatted_text(
-        HTML("<gold>Let's start building!</gold>\n"), style=DEFAULT_STYLE
-    )
-    print_formatted_text(
-        HTML('What do you want to build? <grey>Type /help for help</grey>\n'),
-        style=DEFAULT_STYLE,
-    )
-
-
-def display_initialization_animation(text, is_loaded: asyncio.Event):
-    ANIMATION_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-
-    i = 0
-    while not is_loaded.is_set():
-        sys.stdout.write('\n')
-        sys.stdout.write(
-            f'\033[s\033[J\033[38;2;255;215;0m[{ANIMATION_FRAMES[i % len(ANIMATION_FRAMES)]}] {text}\033[0m\033[u\033[1A'
-        )
-        sys.stdout.flush()
-        time.sleep(0.1)
-        i += 1
-
-    sys.stdout.write('\r' + ' ' * (len(text) + 10) + '\r')
-    sys.stdout.flush()
 
 
 def display_usage_metrics(usage_metrics: UsageMetrics):

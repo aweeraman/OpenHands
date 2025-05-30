@@ -134,7 +134,7 @@ pyarrow = "20.0.0"                                                             #
 datasets = "*"
 
 [tool.poetry.scripts]
-openhands = "openhands.cli.main:main"
+openhands = "openhands.cli.main:entrypoint"
 
 [tool.poetry.group.testgeneval.dependencies]
 fuzzywuzzy = "^0.18.0"

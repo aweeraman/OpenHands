@@ -419,7 +419,7 @@ async def main(loop: asyncio.AbstractEventLoop) -> None:
         )
 
 
-if __name__ == '__main__':
+def entrypoint():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -445,3 +445,7 @@ if __name__ == '__main__':
         except Exception as e:
             print(f'Error during cleanup: {e}')
             sys.exit(1)
+
+
+if __name__ == '__main__':
+    entrypoint()

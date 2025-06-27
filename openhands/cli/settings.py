@@ -54,6 +54,7 @@ def display_settings(config: OpenHandsConfig) -> None:
             [
                 ('   Custom Model', str(llm_config.model)),
                 ('   Base URL', str(llm_config.base_url)),
+                ('   API Version', str(llm_config.api_version) if llm_config.api_version else 'Not Set'),
                 ('   API Key', '********' if llm_config.api_key else 'Not Set'),
             ]
         )
@@ -338,6 +339,14 @@ async def modify_llm_settings_advanced(
             error_message='Base URL cannot be empty',
         )
 
+        if "azure" in base_url.lower():
+            # If the base URL is for Azure, prompt for API version
+            api_version = await get_validated_input(
+                session,
+                '(Step 2.1/6) API Version (CTRL-c to cancel): ',
+                error_message='API Version cannot be empty',
+            )
+
         api_key = await get_validated_input(
             session,
             '(Step 3/6) API Key (CTRL-c to cancel): ',
@@ -388,6 +397,7 @@ async def modify_llm_settings_advanced(
     llm_config = config.get_llm_config()
     llm_config.model = custom_model
     llm_config.base_url = base_url
+    llm_config.api_version = api_version if 'api_version' in locals() else None
     llm_config.api_key = SecretStr(api_key)
     config.set_llm_config(llm_config)
 
@@ -412,6 +422,7 @@ async def modify_llm_settings_advanced(
     settings.llm_model = custom_model
     settings.llm_api_key = SecretStr(api_key)
     settings.llm_base_url = base_url
+    settings.llm_api_version = api_version if 'api_version' in locals() else None
     settings.agent = agent
     settings.confirmation_mode = enable_confirmation_mode
     settings.enable_default_condenser = enable_memory_condensation

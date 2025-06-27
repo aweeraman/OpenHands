@@ -388,6 +388,7 @@ async def main_with_loop(loop: asyncio.AbstractEventLoop) -> None:
             llm_config.model = settings.llm_model
             llm_config.api_key = settings.llm_api_key
             llm_config.base_url = settings.llm_base_url
+            llm_config.api_version = settings.llm_api_version
             config.set_llm_config(llm_config)
         config.security.confirmation_mode = (
             settings.confirmation_mode if settings.confirmation_mode else False

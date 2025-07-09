@@ -9,6 +9,7 @@ import { GitLabTokenInput } from "#/components/features/settings/git-settings/gi
 import { BitbucketTokenInput } from "#/components/features/settings/git-settings/bitbucket-token-input";
 import { ConfigureGitHubRepositoriesAnchor } from "#/components/features/settings/git-settings/configure-github-repositories-anchor";
 import { InstallSlackAppAnchor } from "#/components/features/settings/git-settings/install-slack-app-anchor";
+import { ProjectManagementAnchor } from "#/components/features/settings/git-settings/project-management-anchor";
 import { I18nKey } from "#/i18n/declaration";
 import {
   displayErrorToast,
@@ -120,11 +121,21 @@ function GitSettingsScreen() {
       {!isLoading && (
         <div className="p-9 flex flex-col gap-12">
           {shouldRenderExternalConfigureButtons && !isLoading && (
-            <ConfigureGitHubRepositoriesAnchor slug={config.APP_SLUG!} />
+            <div>
+              <h2 className="text-2xl font-bold text-white mb-4">GitHub</h2>
+              <ConfigureGitHubRepositoriesAnchor slug={config.APP_SLUG!} />
+            </div>
           )}
 
           {shouldRenderExternalConfigureButtons && !isLoading && (
-            <InstallSlackAppAnchor />
+            <div>
+              <h2 className="text-2xl font-bold text-white mb-4">Slack</h2>
+              <InstallSlackAppAnchor />
+            </div>
+          )}
+
+          {shouldRenderExternalConfigureButtons && !isLoading && (
+            <ProjectManagementAnchor />
           )}
 
           {!isSaas && (

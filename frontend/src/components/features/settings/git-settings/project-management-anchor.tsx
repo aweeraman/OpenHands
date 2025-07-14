@@ -84,8 +84,11 @@ export function ProjectManagementAnchor() {
     const fetchLinearUser = async () => {
       try {
         const res = await axios.get("/integration/linear/users/me");
-        const { status } = res.data;
-        setLinearLinked(status === "active");
+        if (res.status === 200) {
+          const { status } = res.data;
+          console.log("Linear user status:", status);
+          setLinearLinked(status === "active");
+        }
       } catch (error: any) {
         if (axios.isAxiosError(error) && error.response?.status === 404) {
           setLinearLinked(false);
@@ -250,7 +253,7 @@ export function ProjectManagementAnchor() {
 
 export function LinearIntegrationConfirmation() {
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  useTranslation();
 
   const linearAllowMutation = useMutation({
     mutationFn: async () => {
@@ -275,30 +278,35 @@ export function LinearIntegrationConfirmation() {
   };
 
   return (
-    <div className="max-w-md">
-      <h2 className="text-2xl font-bold text-white mb-4">
-        {t(I18nKey.INTEGRATION$LINEAR)}
-      </h2>
-      <p className="text-white mb-4">
-        Allow OpenHands to access your Linear account to integrate with your
-        projects.
-      </p>
-      <div className="flex gap-4">
-        <BrandButton
-          onClick={() => linearAllowMutation.mutate()}
-          isDisabled={linearAllowMutation.isPending}
-          variant="secondary"
-          type={undefined}
-        >
-          {linearAllowMutation.isPending ? "Allowing..." : "Allow"}
-        </BrandButton>
-        <BrandButton
-          onClick={handleCancel}
-          variant="secondary"
-          type={undefined}
-        >
-          Cancel
-        </BrandButton>
+    <div className="flex items-center justify-center h-full">
+      <div className="bg-[#454545] p-8 rounded-lg shadow-lg text-center max-w-lg">
+        <h1 className="text-3xl font-bold text-white mb-4">Splendid!</h1>
+        <p className="text-white mb-4">
+          Your organization on Linear is already integrated with OpenHands
+        </p>
+        <p className="text-white mb-6">
+          Do you want to allow the OpenHands agent to perform actions on your
+          behalf?
+        </p>
+        <div className="flex flex-col items-center gap-4">
+          <BrandButton
+            type="button"
+            variant="primary"
+            onClick={() => linearAllowMutation.mutate()}
+            isDisabled={linearAllowMutation.isPending}
+            className="w-35"
+          >
+            Allow
+          </BrandButton>
+          <BrandButton
+            type="button"
+            variant="secondary"
+            className="w-25"
+            onClick={handleCancel}
+          >
+            Cancel
+          </BrandButton>
+        </div>
       </div>
     </div>
   );

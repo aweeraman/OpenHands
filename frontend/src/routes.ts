@@ -19,6 +19,10 @@ export default [
       route("secrets", "routes/secrets-settings.tsx"),
       route("api-keys", "routes/api-keys.tsx"),
       route("integrations/:integrationName", "routes/integration-auth.tsx"),
+      route(
+        "integrations/Linear",
+        "routes/linear-integration-confirmation.tsx",
+      ),
     ]),
     route("conversations/:conversationId", "routes/conversation.tsx", [
       index("routes/changes-tab.tsx"),

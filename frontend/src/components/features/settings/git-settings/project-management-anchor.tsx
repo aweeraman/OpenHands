@@ -9,47 +9,14 @@ import { BrandButton } from "#/components/features/settings/brand-button";
 import { cn } from "#/utils/utils";
 import { I18nKey } from "#/i18n/declaration";
 
-// === Integration-specific placeholder functions ===
-const linkJiraCloudIntegration = async () =>
-  new Promise((resolve) => {
-    setTimeout(() => {
-      console.log("API call: Linking Jira Cloud");
-      resolve({ success: true });
-    }, 1000);
-  });
-
-const unlinkJiraCloudIntegration = async () =>
-  new Promise((resolve) => {
-    setTimeout(() => {
-      console.log("API call: Unlinking Jira Cloud");
-      resolve({ success: true });
-    }, 1000);
-  });
-
-const linkJiraDataCenterIntegration = async () =>
-  new Promise((resolve) => {
-    setTimeout(() => {
-      console.log("API call: Linking Jira Data Center");
-      resolve({ success: true });
-    }, 1000);
-  });
-
-const unlinkJiraDataCenterIntegration = async () =>
-  new Promise((resolve) => {
-    setTimeout(() => {
-      console.log("API call: Unlinking Jira Data Center");
-      resolve({ success: true });
-    }, 1000);
-  });
-
-// const unlinkLinearIntegration = async () => {
-//   const response = await axios.post("/integration/linear/unlink");
-//   return response.data;
-// };
-
 export function ProjectManagementAnchor() {
   const navigate = useNavigate();
   const { t } = useTranslation();
+
+  // const projectManagementShouldRender = true;
+  const jiraShouldRender = true;
+  const jiraDataCenterShouldRender = true;
+  const linearShouldRender = true;
 
   const [jiraCloudLinked, setJiraCloudLinked] = React.useState(() => {
     const stored = localStorage.getItem("jiraCloudLinked");
@@ -79,7 +46,52 @@ export function ProjectManagementAnchor() {
     localStorage.setItem("linearLinked", JSON.stringify(linearLinked));
   }, [linearLinked]);
 
-  // ✅ Fetch Linear user status on page load
+  React.useEffect(() => {
+    const fetchJiraCloudUser = async () => {
+      try {
+        const res = await axios.get("/integration/jira/users/me");
+        if (res.status === 200) {
+          const { status } = res.data;
+          console.log("Jira Cloud user status:", status);
+          setJiraCloudLinked(status === "active");
+        }
+      } catch (error: any) {
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          setJiraCloudLinked(false);
+        } else {
+          toast.error(
+            error?.response?.data?.detail ||
+              "Failed to fetch Jira Cloud status",
+          );
+        }
+      }
+    };
+    fetchJiraCloudUser();
+  }, []);
+
+  React.useEffect(() => {
+    const fetchJiraDataCenterUser = async () => {
+      try {
+        const res = await axios.get("/integration/jira-dc/users/me");
+        if (res.status === 200) {
+          const { status } = res.data;
+          console.log("Jira Data Center user status:", status);
+          setJiraDataCenterLinked(status === "active");
+        }
+      } catch (error: any) {
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          setJiraDataCenterLinked(false);
+        } else {
+          toast.error(
+            error?.response?.data?.detail ||
+              "Failed to fetch Jira Data Center status",
+          );
+        }
+      }
+    };
+    fetchJiraDataCenterUser();
+  }, []);
+
   React.useEffect(() => {
     const fetchLinearUser = async () => {
       try {
@@ -102,49 +114,93 @@ export function ProjectManagementAnchor() {
     fetchLinearUser();
   }, []);
 
-  // === Mutations ===
-
   const jiraCloudLinkMutation = useMutation({
-    mutationFn: linkJiraCloudIntegration,
+    mutationFn: () => axios.get("/integration/jira/validate"),
     onSuccess: () => {
-      console.log("Jira Cloud linked successfully!");
-      navigate("/settings/integrations/Jira Cloud");
+      navigate("/settings/integrations/Jira");
     },
-    onError: (error) => {
-      console.error("Failed to link Jira Cloud:", error);
+    onError: (error: any) => {
+      console.error("Failed to validate Jira Cloud integration:", error);
+      toast.error(
+        error?.response?.data?.detail ||
+          "Something went wrong while validating Jira Cloud integration.",
+      );
     },
   });
+
+  const unlinkJiraCloudIntegration = async () => {
+    const response = await axios.post("/integration/jira/unlink");
+    return response.data;
+  };
 
   const jiraCloudUnlinkMutation = useMutation({
     mutationFn: unlinkJiraCloudIntegration,
     onSuccess: () => {
       setJiraCloudLinked(false);
-      console.log("Jira Cloud unlinked successfully!");
+      toast.success("Jira Cloud unlinked successfully!");
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error("Failed to unlink Jira Cloud:", error);
+      const detailMessage =
+        error?.response?.data?.detail ||
+        "Something went wrong while unlinking.";
+      toast.error(detailMessage);
     },
   });
 
+  // const jiraDataCenterLinkMutation = useMutation({
+  //   mutationFn: linkJiraDataCenterIntegration,
+  //   onSuccess: () => {
+  //     console.log("Jira Data Center linked successfully!");
+  //     navigate("/settings/integrations/Jira Data Center");
+  //   },
+  //   onError: (error) => {
+  //     console.error("Failed to link Jira Data Center:", error);
+  //   },
+  // });
+
   const jiraDataCenterLinkMutation = useMutation({
-    mutationFn: linkJiraDataCenterIntegration,
+    mutationFn: () => axios.get("/integration/jira-dc/validate"),
     onSuccess: () => {
-      console.log("Jira Data Center linked successfully!");
       navigate("/settings/integrations/Jira Data Center");
     },
-    onError: (error) => {
-      console.error("Failed to link Jira Data Center:", error);
+    onError: (error: any) => {
+      console.error("Failed to validate Jira Data Center integration:", error);
+      toast.error(
+        error?.response?.data?.detail ||
+          "Something went wrong while validating Jira Data Center integration.",
+      );
     },
   });
+
+  // const jiraDataCenterUnlinkMutation = useMutation({
+  //   mutationFn: unlinkJiraDataCenterIntegration,
+  //   onSuccess: () => {
+  //     setJiraDataCenterLinked(false);
+  //     console.log("Jira Data Center unlinked successfully!");
+  //   },
+  //   onError: (error) => {
+  //     console.error("Failed to unlink Jira Data Center:", error);
+  //   },
+  // });
+
+  const unlinkJiraDataCenterIntegration = async () => {
+    const response = await axios.post("/integration/jira-dc/unlink");
+    return response.data;
+  };
 
   const jiraDataCenterUnlinkMutation = useMutation({
     mutationFn: unlinkJiraDataCenterIntegration,
     onSuccess: () => {
       setJiraDataCenterLinked(false);
-      console.log("Jira Data Center unlinked successfully!");
+      toast.success("Jira Data Center unlinked successfully!");
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error("Failed to unlink Jira Data Center:", error);
+      const detailMessage =
+        error?.response?.data?.detail ||
+        "Something went wrong while unlinking.";
+      toast.error(detailMessage);
     },
   });
 
@@ -170,7 +226,7 @@ export function ProjectManagementAnchor() {
   const linearUnlinkMutation = useMutation({
     mutationFn: unlinkLinearIntegration,
     onSuccess: () => {
-      setLinearLinked(false); // ✅ Update button state
+      setLinearLinked(false);
       toast.success("Linear unlinked successfully!");
     },
     onError: (error: any) => {
@@ -189,124 +245,69 @@ export function ProjectManagementAnchor() {
       </h2>
       <div className="flex flex-col gap-4">
         {/* Jira Cloud */}
-        <div className="flex items-center justify-between">
-          <p className="text-white">{t(I18nKey.INTEGRATION$JIRA_CLOUD)}</p>
-          <BrandButton
-            type="button"
-            variant={jiraCloudLinked ? "secondary" : "primary"}
-            className={cn("w-32")}
-            onClick={() =>
-              jiraCloudLinked
-                ? jiraCloudUnlinkMutation.mutate()
-                : jiraCloudLinkMutation.mutate()
-            }
-          >
-            {jiraCloudLinked
-              ? t(I18nKey.BUTTON$UNLINK_INTEGRATION)
-              : t(I18nKey.BUTTON$LINK_INTEGRATION)}
-          </BrandButton>
-        </div>
+        {jiraShouldRender && (
+          <div className="flex items-center justify-between">
+            <p className="text-white">{t(I18nKey.INTEGRATION$JIRA_CLOUD)}</p>
+            <BrandButton
+              type="button"
+              variant={jiraCloudLinked ? "secondary" : "primary"}
+              className={cn("w-32")}
+              onClick={() =>
+                jiraCloudLinked
+                  ? jiraCloudUnlinkMutation.mutate()
+                  : jiraCloudLinkMutation.mutate()
+              }
+            >
+              {jiraCloudLinked
+                ? t(I18nKey.BUTTON$UNLINK_INTEGRATION)
+                : t(I18nKey.BUTTON$LINK_INTEGRATION)}
+            </BrandButton>
+          </div>
+        )}
 
         {/* Jira Data Center */}
-        <div className="flex items-center justify-between">
-          <p className="text-white">
-            {t(I18nKey.INTEGRATION$JIRA_DATA_CENTER)}
-          </p>
-          <BrandButton
-            type="button"
-            variant={jiraDataCenterLinked ? "secondary" : "primary"}
-            className={cn("w-32")}
-            onClick={() =>
-              jiraDataCenterLinked
-                ? jiraDataCenterUnlinkMutation.mutate()
-                : jiraDataCenterLinkMutation.mutate()
-            }
-          >
-            {jiraDataCenterLinked
-              ? t(I18nKey.BUTTON$UNLINK_INTEGRATION)
-              : t(I18nKey.BUTTON$LINK_INTEGRATION)}
-          </BrandButton>
-        </div>
+        {jiraDataCenterShouldRender && (
+          <div className="flex items-center justify-between">
+            <p className="text-white">
+              {t(I18nKey.INTEGRATION$JIRA_DATA_CENTER)}
+            </p>
+            <BrandButton
+              type="button"
+              variant={jiraDataCenterLinked ? "secondary" : "primary"}
+              className={cn("w-32")}
+              onClick={() =>
+                jiraDataCenterLinked
+                  ? jiraDataCenterUnlinkMutation.mutate()
+                  : jiraDataCenterLinkMutation.mutate()
+              }
+            >
+              {jiraDataCenterLinked
+                ? t(I18nKey.BUTTON$UNLINK_INTEGRATION)
+                : t(I18nKey.BUTTON$LINK_INTEGRATION)}
+            </BrandButton>
+          </div>
+        )}
 
         {/* Linear */}
-        <div className="flex items-center justify-between">
-          <p className="text-white">{t(I18nKey.INTEGRATION$LINEAR)}</p>
-          <BrandButton
-            type="button"
-            variant={linearLinked ? "secondary" : "primary"}
-            className={cn("w-32")}
-            onClick={() =>
-              linearLinked
-                ? linearUnlinkMutation.mutate()
-                : linearLinkMutation.mutate()
-            }
-          >
-            {linearLinked
-              ? t(I18nKey.BUTTON$UNLINK_INTEGRATION)
-              : t(I18nKey.BUTTON$LINK_INTEGRATION)}
-          </BrandButton>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function LinearIntegrationConfirmation() {
-  const navigate = useNavigate();
-  useTranslation();
-
-  const linearAllowMutation = useMutation({
-    mutationFn: async () => {
-      const linkRes = await axios.post("/integration/linear/users");
-      return linkRes.data;
-    },
-    onSuccess: () => {
-      toast.success("Linear linked successfully!");
-      navigate("/settings/integrations");
-    },
-    onError: (error: any) => {
-      console.error("Failed to link Linear:", error);
-      toast.error(
-        error?.response?.data?.detail || "Something went wrong while linking.",
-      );
-      navigate("/settings/integrations");
-    },
-  });
-
-  const handleCancel = () => {
-    navigate("/settings/integrations");
-  };
-
-  return (
-    <div className="flex items-center justify-center h-full">
-      <div className="bg-[#454545] p-8 rounded-lg shadow-lg text-center max-w-lg">
-        <h1 className="text-3xl font-bold text-white mb-4">Splendid!</h1>
-        <p className="text-white mb-4">
-          Your organization on Linear is already integrated with OpenHands
-        </p>
-        <p className="text-white mb-6">
-          Do you want to allow the OpenHands agent to perform actions on your
-          behalf?
-        </p>
-        <div className="flex flex-col items-center gap-4">
-          <BrandButton
-            type="button"
-            variant="primary"
-            onClick={() => linearAllowMutation.mutate()}
-            isDisabled={linearAllowMutation.isPending}
-            className="w-35"
-          >
-            Allow
-          </BrandButton>
-          <BrandButton
-            type="button"
-            variant="secondary"
-            className="w-25"
-            onClick={handleCancel}
-          >
-            Cancel
-          </BrandButton>
-        </div>
+        {linearShouldRender && (
+          <div className="flex items-center justify-between">
+            <p className="text-white">{t(I18nKey.INTEGRATION$LINEAR)}</p>
+            <BrandButton
+              type="button"
+              variant={linearLinked ? "secondary" : "primary"}
+              className={cn("w-32")}
+              onClick={() =>
+                linearLinked
+                  ? linearUnlinkMutation.mutate()
+                  : linearLinkMutation.mutate()
+              }
+            >
+              {linearLinked
+                ? t(I18nKey.BUTTON$UNLINK_INTEGRATION)
+                : t(I18nKey.BUTTON$LINK_INTEGRATION)}
+            </BrandButton>
+          </div>
+        )}
       </div>
     </div>
   );

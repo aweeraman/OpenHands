@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useParams, useNavigate } from "react-router";
 import { useMutation } from "@tanstack/react-query";
 import { Trans, useTranslation } from "react-i18next";
@@ -6,18 +7,30 @@ import toast from "react-hot-toast";
 import { BrandButton } from "#/components/features/settings/brand-button";
 import { I18nKey } from "#/i18n/declaration";
 
-// Placeholder API function for allowing integration
 const allowIntegrationApi = async (integrationName: string) => {
-  if (integrationName === "Linear") {
-    const linkRes = await axios.post("/integration/linear/users");
-    return linkRes.data;
+  if (integrationName === "Jira") {
+    const res = await axios.post("/integration/jira/users");
+    return res.data;
   }
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      console.log(`API call: Allowing ${integrationName}`);
-      resolve({ success: true });
-    }, 1000);
-  });
+  if (integrationName === "Jira Data Center") {
+    const res = await axios.post("/integration/jira-dc/users");
+    return res.data;
+  }
+  if (integrationName === "Linear") {
+    const res = await axios.post("/integration/linear/users");
+    return res.data;
+  }
+
+  // Placeholder for other integrations
+  // eslint-disable-next-line prettier/prettier
+  return new Promise((resolve) =>
+    // eslint-disable-next-line prettier/prettier
+    {setTimeout(() => {
+        console.log(`API call: Allowing ${integrationName}`);
+        resolve({ success: true });
+      }, 1000);
+    },
+  );
 };
 
 export default function IntegrationAuthScreen() {
@@ -27,22 +40,35 @@ export default function IntegrationAuthScreen() {
 
   const allowMutation = useMutation({
     mutationFn: allowIntegrationApi,
-    onSuccess: (_, variables) => {
-      console.log("Integration allowed successfully!");
-      if (variables === "Jira Cloud") {
+    onSuccess: (_, name) => {
+      if (name === "Jira") {
         localStorage.setItem("jiraCloudLinked", JSON.stringify(true));
-      } else if (variables === "Jira Data Center") {
+        toast.success("Jira Cloud linked successfully!");
+      } else if (name === "Jira Data Center") {
         localStorage.setItem("jiraDataCenterLinked", JSON.stringify(true));
-      } else if (variables === "Linear") {
+        toast.success("Jira Data Center linked successfully!");
+      } else if (name === "Linear") {
         localStorage.setItem("linearLinked", JSON.stringify(true));
         toast.success("Linear linked successfully!");
       }
+
       navigate("/settings/integrations");
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    onError: (error: any, variables) => {
-      console.error(`Failed to allow ${variables} integration:`, error);
-      if (variables === "Linear") {
+    onError: (error: any, name) => {
+      console.error(`Failed to allow ${name} integration:`, error);
+      if (name === "Jira") {
+        toast.error(
+          error?.response?.data?.detail ||
+            "Something went wrong while linking.",
+        );
+      }
+      if (name === "Jira Data Center") {
+        toast.error(
+          error?.response?.data?.detail ||
+            "Something went wrong while linking.",
+        );
+      }
+      if (name === "Linear") {
         toast.error(
           error?.response?.data?.detail ||
             "Something went wrong while linking.",
@@ -84,9 +110,12 @@ export default function IntegrationAuthScreen() {
             type="button"
             variant="primary"
             onClick={handleAllow}
+            isDisabled={allowMutation.isPending}
             className="w-35"
           >
-            {t(I18nKey.BUTTON$ALLOW_INTEGRATION)}
+            {allowMutation.isPending
+              ? t(I18nKey.BUTTON$ALLOW_INTEGRATION) || "Allowing..."
+              : t(I18nKey.BUTTON$ALLOW_INTEGRATION)}
           </BrandButton>
           <BrandButton
             type="button"

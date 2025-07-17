@@ -61,11 +61,15 @@ export function IntegrationRow({
       }
     },
     onError: (error) => {
-      const errorMessage = retrieveAxiosErrorMessage(error);
-      displayErrorToast(
-        errorMessage ||
-          t(I18nKey.PROJECT_MANAGEMENT$VALIDATE_INTEGRATION_ERROR),
-      );
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        setInfoModalOpen(true);
+      } else {
+        const errorMessage = retrieveAxiosErrorMessage(error);
+        displayErrorToast(
+          errorMessage ||
+            t(I18nKey.PROJECT_MANAGEMENT$VALIDATE_INTEGRATION_ERROR),
+        );
+      }
     },
   });
 

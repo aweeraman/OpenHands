@@ -11,6 +11,9 @@ class ConversationTrigger(Enum):
     SUGGESTED_TASK = 'suggested_task'
     REMOTE_API_KEY = 'openhands_api'
     SLACK = 'slack'
+    JIRA_CLOUD = 'jira_cloud'
+    JIRA_DC = 'jira_dc'
+    LINEAR = 'linear'
 
 
 @dataclass

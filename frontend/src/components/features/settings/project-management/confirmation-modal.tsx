@@ -1,5 +1,5 @@
 import React from "react";
-import { Trans, useTranslation } from "react-i18next";
+import { useTranslation } from "react-i18next";
 import { I18nKey } from "#/i18n/declaration";
 import { BrandButton } from "#/components/features/settings/brand-button";
 import { ModalBackdrop } from "#/components/shared/modals/modal-backdrop";
@@ -38,12 +38,9 @@ export function ConfirmationModal({
       <div className="bg-base-secondary p-4 rounded-xl flex flex-col gap-4 border border-tertiary w-96">
         <h2 className="text-lg font-semibold">{title}</h2>
         <p>
-          <Trans
-            i18nKey={descriptionKey}
-            components={{
-              platform: <strong>{platformName}</strong>,
-            }}
-          />
+          {t(descriptionKey, {
+            platform: platformName,
+          })}
         </p>
         <div className="flex justify-end gap-2">
           <BrandButton

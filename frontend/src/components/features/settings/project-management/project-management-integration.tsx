@@ -7,7 +7,7 @@ export function ProjectManagementIntegration() {
   const { t } = useTranslation();
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 w-1/4">
       <h2 className="text-lg font-semibold">
         {t(I18nKey.PROJECT_MANAGEMENT$INTEGRATIONS_TITLE)}
       </h2>
